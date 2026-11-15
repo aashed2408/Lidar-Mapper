@@ -2,7 +2,7 @@
 
 Load any floor plan and watch a robot map it with a laser.
 
-**Live site:** TODO: add GitHub Pages link
+**Live site:** https://aashed2408.github.io/Lidar-Mapper/
 
 TODO: add screenshot
 
