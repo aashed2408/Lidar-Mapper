@@ -29,7 +29,26 @@ A* from (1.0, 3.0) to the Bedroom (9.0, 7.2): 9.74 m (straight line: 9.04 m), ne
 
 ### Findings
 
-TODO: write in your own words
+**1. The robot can map a whole house on its own.**
+With a normal-quality sensor (about 2 cm of error), the robot explored all four rooms without any help. It saw 100% of the floor, 99.3% of its map was correct, and it never hit a wall. This took 87 scans and about 42 metres of driving.
+
+**2. Most of the map comes quickly. The last corners take the longest.**
+The first scan alone shows about a fifth of the house. After 5 metres of driving, the robot had seen about 45% of the floor, and after about 15 metres, more than 90%. The rest of the drive was spent filling in small gaps, such as corners and the spaces behind furniture. In other words, about the last 5% of the map took more than half of the driving.
+
+**3. A worse sensor mostly hurts the walls, not the floor.**
+We added more and more random error to the sensor. Even at 10 cm of error, the robot still found 100% of the floor, and its map was still 97% correct. The walls are what suffered. With a perfect sensor, the map found 99.5% of the wall edges. At 10 cm of error, it found only about 61%, and the walls looked patchy and fuzzy. This happens because the map's squares are 5 cm wide. A 10 cm error is two squares, but the map's safety rule only protects one square. So some readings "see through" the surface of a wall and wipe out parts of it.
+
+**4. A worse sensor also makes the robot less safe.**
+At 10 cm of error, the robot drove further (52 m instead of 42 m) and bumped into walls 9 times. With 0, 2 or 5 cm of error, it never bumped. The number of bumps depends a lot on luck: running the same test with different random numbers gave anywhere from 0 to 9 bumps. At 10 cm the robot is at risk, but it doesn't crash every time.
+
+**5. The planned path is short and safe.**
+To get from the living room to the bedroom, the planner found a 9.7 m path. That is only about 8% longer than a straight line (9.0 m), even though the robot has to go through doorways and keep 18 cm away from every wall. The path never came closer than 21 cm to a wall, and it never went through any area the robot hadn't seen.
+
+**6. The website and the Python version agree.**
+With a perfect sensor, both versions give exactly the same results. With a noisy sensor, the numbers are close but not identical, because the two programs use different random numbers. This gives confidence that both versions work correctly.
+
+**7. Uploaded floor plans work, with a few things to watch out for.**
+A plan downloaded from the site and uploaded again gives exactly the same map as the built-in house. Very large plans are split into bigger squares (for example 6 cm instead of 5 cm), so the map is a bit less detailed. If a picture has empty space outside the outer walls, the "walls found" score is lower. The robot can never see the outside face of those walls, but the score still counts them.
 
 ## Limitations
 
@@ -84,7 +103,20 @@ The first version of this project: the same simulator in Python, for the example
 
 ### Findings
 
-TODO: write in your own words
+**1. One scan only shows the room you are in.**
+From its starting spot, a single scan mapped the living room's walls and the couch, plus a little of the kitchen through the open doorway. The rest of the house stayed unknown, because the laser cannot go through walls. This is why the robot has to move around to build a full map.
+
+**2. The robot mapped the whole house without hitting anything.**
+With 2 cm of sensor error, the robot saw 100% of the floor after 85 scans and 40.8 metres of driving. 99.3% of its map was correct, and it had 0 bumps. Coverage climbed fast at first (about 44% after 5 m and 96% after 20 m). The last few percent took the longest to fill in.
+
+**3. More sensor error means fuzzier walls.**
+In the noise test, the robot still saw 100% of the floor at every level, and accuracy only dropped from 100% to 97%. The walls changed the most. The share of wall edges found fell from 99.5% with a perfect sensor to about 60% at 10 cm of error. The noise test picture shows this clearly: the walls go from thin, sharp lines to thick, speckled ones.
+
+**4. Luck plays a part.**
+In this Python run, the robot never bumped into a wall, even at 10 cm of error. It also drove a little less at 5 cm than at 2 cm. When we ran the same test with different random numbers, some runs at 10 cm did bump into walls. Small differences between runs are partly luck, so the overall trend matters more than any single number.
+
+**5. The planned route is close to the shortest possible.**
+The path from the living room to the bedroom was 9.7 m long, compared with 9.0 m in a straight line. It went through the doorways and stayed at least 21 cm from every wall.
 
 ## How to run
 
