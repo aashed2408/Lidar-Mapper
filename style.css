@@ -1,0 +1,82 @@
+/* The look of the page */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f4f5f7;
+  color: #1d2330;
+}
+
+header {
+  background: #1d2330;
+  color: white;
+  padding: 16px 24px;
+}
+header h1 { margin: 0 0 4px; font-size: 1.8rem; }
+header p { margin: 0; opacity: 0.85; }
+
+main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+
+h2 { font-size: 1.05rem; margin: 0 0 8px; }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+fieldset {
+  border: 1px solid #ccd0d8;
+  border-radius: 8px;
+  background: white;
+  padding: 10px 14px;
+  flex: 1 1 320px;
+}
+fieldset label { display: block; margin: 6px 0; }
+fieldset input[type="range"] { width: 100%; }
+fieldset input[type="number"] { width: 5em; }
+.tip { font-size: 0.85rem; color: #555; margin: 6px 0; }
+.small { font-size: 0.85rem; margin: 4px 0; }
+
+.buttons { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+button {
+  font-size: 1rem;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background: #2f6fde;
+  color: white;
+  cursor: pointer;
+}
+button:hover { background: #2459b5; }
+button:disabled { background: #9aa4b5; cursor: default; }
+
+.message { flex-basis: 100%; min-height: 1.3em; margin: 4px 0; font-weight: 600; color: #b3361d; }
+
+/* The two canvases side by side, stacked on narrow screens */
+.views { display: flex; gap: 16px; margin-top: 12px; }
+.view { flex: 1 1 0; min-width: 0; }
+.view canvas {
+  width: 100%;
+  height: auto;
+  background: white;
+  border: 1px solid #ccd0d8;
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
+#realCanvas, #mapCanvas { cursor: crosshair; }
+
+.results { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; align-items: flex-start; }
+.stats { border-collapse: collapse; background: white; border-radius: 8px; min-width: 240px; }
+.stats th, .stats td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #eceef2; }
+.stats td { font-variant-numeric: tabular-nums; }
+.chart { flex: 1 1 320px; }
+.chart canvas { width: 100%; max-width: 480px; height: auto; background: white; border: 1px solid #ccd0d8; border-radius: 4px; }
+
+.how { margin-top: 20px; background: white; padding: 12px 18px; border-radius: 8px; }
+.how li { margin: 6px 0; }
+
+@media (max-width: 760px) {
+  .views { flex-direction: column; }
+}

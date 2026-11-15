@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LiDAR Mapper</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>LiDAR Mapper</h1>
+    <p>Load any floor plan and watch a robot map it with a laser.</p>
+  </header>
+
+  <main>
+    <section class="controls">
+      <fieldset>
+        <legend>Floor plan</legend>
+        <label><input type="radio" name="plan" value="example" checked> Example house</label>
+        <label><input type="radio" name="plan" value="upload"> Upload your own</label>
+        <input type="file" id="file" accept="image/png, image/jpeg">
+        <label>Real width (m) <input type="number" id="realWidth" value="10" min="0.5" step="0.5"></label>
+        <p class="tip">Works best with simple black-on-white plans. Door-swing arcs, text and furniture symbols become walls, so erase them and leave doorways as open gaps.</p>
+        <p class="small">Cell size: <span id="cellSize">5.0</span> cm</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Settings</legend>
+        <label>Sensor noise: <span id="noiseVal">2</span> cm
+          <input type="range" id="noise" min="0" max="10" step="1" value="2"></label>
+        <label>LiDAR range: <span id="rangeVal">4</span> m
+          <input type="range" id="range" min="1" max="8" step="0.5" value="4"></label>
+        <label>Speed: <span id="speedVal">8</span> scans per second
+          <input type="range" id="speed" min="1" max="30" step="1" value="8"></label>
+      </fieldset>
+
+      <div class="buttons">
+        <button id="start">Start</button>
+        <button id="pause">Pause</button>
+        <button id="reset">Reset</button>
+        <button id="download">Download example floor plan</button>
+      </div>
+      <p id="message" class="message"></p>
+    </section>
+
+    <section class="views">
+      <div class="view">
+        <h2>Real floor plan</h2>
+        <canvas id="realCanvas"></canvas>
+      </div>
+      <div class="view">
+        <h2>Robot's map</h2>
+        <canvas id="mapCanvas"></canvas>
+      </div>
+    </section>
+
+    <section class="results">
+      <table class="stats">
+        <tr><th>Scans</th><td id="sScans">0</td></tr>
+        <tr><th>Metres driven</th><td id="sDriven">0.0</td></tr>
+        <tr><th>Coverage</th><td id="sCoverage">0.0%</td></tr>
+        <tr><th>Accuracy</th><td id="sAccuracy">0.0%</td></tr>
+        <tr><th>Walls found</th><td id="sWalls">0.0%</td></tr>
+        <tr><th>Bumps</th><td id="sBumps">0</td></tr>
+        <tr><th>Status</th><td id="sStatus">Ready</td></tr>
+      </table>
+      <div class="chart">
+        <h2>Coverage vs metres driven</h2>
+        <canvas id="chart" width="480" height="240"></canvas>
+      </div>
+    </section>
+
+    <section class="how">
+      <h2>How it works</h2>
+      <ul>
+        <li><b>LiDAR:</b> the robot shoots 180 laser beams all around it, one every 2 degrees, and measures how far each one goes before it hits something.</li>
+        <li><b>Map:</b> the floor is split into small squares. Each beam makes the squares it passes through "more free" and the square it hits "more occupied". Gray means the robot doesn't know yet.</li>
+        <li><b>Frontiers:</b> the robot drives to the nearest edge between known free space and unknown space, scans again, and repeats until nothing is left to explore.</li>
+        <li><b>A*:</b> once the map is done, the A* algorithm finds the shortest path to where you click, staying 18 cm away from walls and out of unknown areas.</li>
+        <li><b>Noise:</b> real sensors make small mistakes, so a random error is added to every distance. More noise makes the walls on the map thicker and fuzzier.</li>
+      </ul>
+    </section>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
