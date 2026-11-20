@@ -3,7 +3,8 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { makeExampleHouse, imageToGrid, worldToRgba, toCell, cellCenter } from "../js/world.js";
 import { Explorer, planPath, pathLength } from "../js/explore.js";
-import { isUnknown } from "../js/mapping.js";
+import { isUnknown, isFree, isOccupied, updateMap } from "../js/mapping.js";
+import { parseLine, LineSplitter, readingToBeam, newRoomMap, mapToRgba } from "../js/sensor.js";
 
 const lines = [];      // the lines of the results file
 let failures = 0;
@@ -149,6 +150,87 @@ log();
   log();
   check("same grid size and cell size", g.nx === house.nx && g.ny === house.ny && Math.abs(g.cell - house.cell) < 1e-12);
   check("every cell matches", different === 0);
+}
+log();
+
+// ---------- Test 6: real sensor lines -> map ----------
+log("## Test 6: Real sensor: reading the ESP32's lines");
+log();
+{
+  // parseLine: one line of text -> a reading, a sweep end, or a message.
+  const a = parseLine("90,1234,1");
+  check("'90,1234,1' is a valid reading", a.type === "reading" && a.angleDeg === 90 && a.distanceMm === 1234 && a.ok === true);
+  const b = parseLine("178,0,0\r");
+  check("'178,0,0' is a reading with ok = 0", b.type === "reading" && b.angleDeg === 178 && b.ok === false);
+  check("'SWEEP_END' ends a sweep", parseLine("SWEEP_END").type === "sweepEnd");
+  check("an empty line is ignored", parseLine("   ") === null);
+  const w = parseLine("ERROR: VL53L1X sensor not found. Check the wiring: VIN->3V3, GND->GND, SDA->GPIO21, SCL->GPIO22.");
+  check("the wiring warning is a message", w.type === "message" && w.text.startsWith("ERROR"));
+  check("broken lines are messages, not readings",
+    ["90,12", "90,abc,1", "90,100,2", ",100,1", "1,2,3,4"].every((t) => parseLine(t).type === "message"));
+
+  // LineSplitter: chunks that break in the middle of a line.
+  const sp = new LineSplitter();
+  const got = [...sp.push("0,50"), ...sp.push("0,1\r\n2,51"), ...sp.push("0,1\r\nSWEEP_"), ...sp.push("END\r\n")];
+  check("chunks are joined back into whole lines", JSON.stringify(got) === JSON.stringify(["0,500,1", "2,510,1", "SWEEP_END"]));
+
+  // readingToBeam: degrees and mm -> radians and metres, hit or miss.
+  const close = (p, q) => Math.abs(p - q) < 1e-9;
+  const ahead = readingToBeam({ angleDeg: 90, distanceMm: 1500, ok: true }, 90);
+  check("90 degrees points the way the scanner faces", close(ahead.angleRad, Math.PI / 2) && close(ahead.distanceM, 1.5) && ahead.hit);
+  const left = readingToBeam({ angleDeg: 180, distanceMm: 1000, ok: true }, 90);
+  check("180 degrees is 90 degrees to the left", close(left.angleRad, Math.PI));
+  const right = readingToBeam({ angleDeg: 180, distanceMm: 1000, ok: true }, 90, true);
+  check("flipped: 180 degrees is 90 degrees to the right", close(right.angleRad, 0));
+  const turned = readingToBeam({ angleDeg: 90, distanceMm: 1000, ok: true }, 270);
+  check("turned 180: 90 degrees points down", close(turned.angleRad, 1.5 * Math.PI));
+  const bad = readingToBeam({ angleDeg: 0, distanceMm: 1200, ok: false }, 90);
+  check("ok = 0 is a miss out to 4 m", !bad.hit && bad.distanceM === 4);
+  const far = readingToBeam({ angleDeg: 0, distanceMm: 4000, ok: true }, 90);
+  check("4 m or more is a miss", !far.hit && far.distanceM === 4);
+
+  // End to end: a fake sweep of a square room, sent as text lines like the ESP32 does.
+  // The scanner is at (4, 4) facing up. Real walls are 1.5 m to the left, right and front.
+  const map = newRoomMap();
+  check("the room map is 8 m x 8 m (160 x 160 cells)", map.nx === 160 && map.ny === 160 && map.cell === 0.05);
+  const sx = 4, sy = 4, heading = 90, wall = 1.5;
+  let text = "";
+  for (let deg = 0; deg <= 180; deg += 2) {
+    const t = ((heading + deg - 90) * Math.PI) / 180;
+    const dx = Math.cos(t), dy = Math.sin(t);
+    // Distance to the nearest of the three walls along this beam.
+    const d = Math.min(dx > 1e-9 ? wall / dx : Infinity, dx < -1e-9 ? -wall / dx : Infinity, dy > 1e-9 ? wall / dy : Infinity);
+    text += `${deg},${Math.round(d * 1000)},${d < 4 ? 1 : 0}\r\n`;
+  }
+  text += "SWEEP_END\r\n";
+  const splitter = new LineSplitter();
+  let readings = 0, sweeps = 0;
+  for (let k = 0; k < text.length; k += 7) { // arrive in small chunks
+    for (const line of splitter.push(text.slice(k, k + 7))) {
+      const msg = parseLine(line);
+      if (!msg) continue;
+      if (msg.type === "sweepEnd") sweeps++;
+      if (msg.type !== "reading") continue;
+      const beam = readingToBeam(msg, heading);
+      updateMap(map, sx, sy, [beam.angleRad], [beam.distanceM], [beam.hit]);
+      readings++;
+    }
+  }
+  check("91 readings and 1 sweep end were read", readings === 91 && sweeps === 1);
+  const cellAt = (x, y) => map.data[Math.floor(y / map.cell) * map.nx + Math.floor(x / map.cell)];
+  // Is any cell in the 3 x 3 block around (x, y) occupied? (Hits are a few cm apart.)
+  const wallNear = (x, y) => [-1, 0, 1].some((i) => [-1, 0, 1].some((j) => isOccupied(cellAt(x + i * map.cell, y + j * map.cell))));
+  check("the wall in front (y = 5.5 m) is occupied", wallNear(4, 5.5) && wallNear(3, 5.5) && wallNear(5, 5.5));
+  check("the wall on the left (x = 2.5 m) is occupied", wallNear(2.5, 4) && wallNear(2.5, 4.5) && wallNear(2.5, 5));
+  check("the wall on the right (x = 5.5 m) is occupied", wallNear(5.5, 4) && wallNear(5.5, 4.5) && wallNear(5.5, 5));
+  check("the floor in front of the scanner is free", isFree(cellAt(4, 5)));
+  check("behind the scanner is still unknown", isUnknown(cellAt(4, 3)));
+
+  // mapToRgba: gray unknown, white free, black occupied.
+  const png = mapToRgba(map, 2);
+  const pixel = (x, y) => png.rgba[((png.height - 1 - Math.floor(y / map.cell * 2)) * png.width + Math.floor(x / map.cell * 2)) * 4];
+  check("PNG colours: white free, black wall, gray unknown",
+    png.width === 320 && pixel(4, 5) === 255 && pixel(4, 5.51) === 0 && pixel(4, 3) === 128);
 }
 log();
 

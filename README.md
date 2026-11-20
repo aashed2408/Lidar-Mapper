@@ -27,6 +27,8 @@ From [results/test_results.md](results/test_results.md) (example house, seed 42)
 
 A* from (1.0, 3.0) to the Bedroom (9.0, 7.2): 9.74 m (straight line: 9.04 m), never closer than 21 cm to a wall.
 
+The tests also check the real-sensor code (Test 6): reading the ESP32's lines, joining lines split across USB chunks, turning angles and distances into beams, and building a map from a pretend sweep.
+
 ### Findings
 
 **1. The robot can map a whole house on its own.**
@@ -62,6 +64,49 @@ A plan downloaded from the site and uploaded again gives exactly the same map as
 ## Next week (hardware)
 
 A VL53L1X laser distance sensor on a servo, connected to an ESP32 or Arduino, sends (angle, distance) readings to a laptop over USB, and the same `updateMap` logic turns them into a real map of a room. The servo sweeps 180 degrees instead of 360.
+
+## Real hardware
+
+The website has a **Real sensor** mode. A laser distance sensor on a servo sweeps half a circle, the ESP32 sends each angle and distance to the laptop over USB, and the website turns them into a map with the same `updateMap` code the simulation uses.
+
+### Parts list
+
+| Part | What it does |
+|---|---|
+| ESP32-WROOM-32 DevKit (30-pin, CP2102, USB-C) | The little computer: moves the servo, reads the sensor, talks to the laptop |
+| Adafruit VL53L1X time-of-flight sensor | The laser: measures distance up to about 4 m |
+| MG90S servo | Turns the sensor from 0 to 180 degrees |
+| USB-C **data** cable | Power, and the readings going to the laptop |
+| Jumper wires, breadboard | Connections |
+| Tape or hot glue | Fixes the sensor to the servo arm |
+
+### Wiring
+
+| From | To (ESP32 pin) |
+|---|---|
+| VL53L1X VIN | 3V3 |
+| VL53L1X GND | GND |
+| VL53L1X SDA | GPIO21 |
+| VL53L1X SCL | GPIO22 |
+| Servo signal (orange) | GPIO18 |
+| Servo power (red) | VIN (5 V from USB) |
+| Servo ground (brown) | GND |
+
+### How to run it
+
+1. **Upload the code.** Open [firmware/lidar_scanner/lidar_scanner.ino](firmware/lidar_scanner/lidar_scanner.ino) in the Arduino IDE. The guide at the top of the file explains how to add the ESP32 board, install the `Adafruit_VL53L1X` and `ESP32Servo` libraries, and upload.
+2. **Attach the servo arm.** After the upload, the servo turns to 90 degrees and waits 5 seconds. Attach the arm with the sensor pointing straight ahead.
+3. **Check it in the Serial Monitor (115200 baud).** You should see lines like `90,1234,1` (angle, distance in mm, 1 = good reading) and `SWEEP_END` after each sweep. If you see "sensor not found", check the wiring. **Close the Serial Monitor afterwards**, because only one program can use the USB port at a time.
+4. **Open the website in Chrome or Edge on a computer** (Web Serial does not work in Firefox, Safari or on phones). Choose **Real sensor** at the top.
+5. **Click the map** where the scanner is in your room, and use the **Scanner faces** slider to set the way it points when the servo is at 90 degrees (90 = up on the map).
+6. **Click Connect sensor** and pick the ESP32 (it may be called "CP2102" or "USB to UART"). The ESP32 restarts, waits 5 seconds, and starts sweeping. Green dots appear as the beam sweeps, like a radar.
+7. To map more of the room:
+   - **Turn 180°:** turn the real scanner around, then click this to scan the other half.
+   - **Move scanner:** move the real scanner, click this, then click its new spot on the map.
+   - **Flip left/right:** if the map comes out mirrored (a wall on your left shows on the right), click this, then **Clear map**.
+   - **Download map as PNG** saves the map.
+
+Tips: walls show as black dotted lines because the beams are 2 degrees apart and spread out further away. Glass, mirrors, shiny and very dark surfaces can give bad readings. If the ESP32 keeps restarting when the servo moves, the USB port may not give enough power: try another port or a powered USB hub.
 
 ## How to run
 

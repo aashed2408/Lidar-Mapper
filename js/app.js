@@ -1,8 +1,9 @@
 // Page logic: controls, drawing and animation. This is the only file that touches the page.
 import { makeExampleHouse, imageToGrid, worldToRgba, toCell } from "./world.js";
 import { ROBOT_RADIUS } from "./lidar.js";
-import { isFree, isOccupied } from "./mapping.js";
+import { isFree, isOccupied, updateMap } from "./mapping.js";
 import { Explorer, inflate, SAFETY_M, planPath, pathLength } from "./explore.js";
+import { parseLine, LineSplitter, readingToBeam, beamEnd, newRoomMap, mapToRgba, ROOM_M, SENSOR_MAX_M } from "./sensor.js";
 
 const $ = (id) => document.getElementById(id);
 const realCanvas = $("realCanvas");
@@ -29,16 +30,16 @@ function toPx(canvas, x, y) {
 }
 
 // Draw a grid of cells onto a canvas. colourOf(i) returns a grey level 0..255 for cell i.
-function gridToCanvas(colourOf) {
+function gridToCanvas(colourOf, nx = world.nx, ny = world.ny) {
   const off = document.createElement("canvas");
-  off.width = world.nx;
-  off.height = world.ny;
+  off.width = nx;
+  off.height = ny;
   const ctx = off.getContext("2d");
-  const img = ctx.createImageData(world.nx, world.ny);
-  for (let r = 0; r < world.ny; r++) {
-    for (let c = 0; c < world.nx; c++) {
-      const v = colourOf(r * world.nx + c);
-      const p = ((world.ny - 1 - r) * world.nx + c) * 4; // image rows go top-down
+  const img = ctx.createImageData(nx, ny);
+  for (let r = 0; r < ny; r++) {
+    for (let c = 0; c < nx; c++) {
+      const v = colourOf(r * nx + c);
+      const p = ((ny - 1 - r) * nx + c) * 4; // image rows go top-down
       img.data[p] = img.data[p + 1] = img.data[p + 2] = v;
       img.data[p + 3] = 255;
     }
@@ -384,7 +385,11 @@ $("realWidth").addEventListener("change", () => {
 
 // Save the example house as a black-on-white PNG (4 pixels per cell).
 $("download").addEventListener("click", () => {
-  const png = worldToRgba(makeExampleHouse(), 4);
+  savePng(worldToRgba(makeExampleHouse(), 4), "example_floor_plan.png");
+});
+
+// Save pixels ({ rgba, width, height }) as a PNG file the user downloads.
+function savePng(png, fileName) {
   const off = document.createElement("canvas");
   off.width = png.width;
   off.height = png.height;
@@ -392,11 +397,250 @@ $("download").addEventListener("click", () => {
   off.toBlob((blob) => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "example_floor_plan.png";
+    a.download = fileName;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }, "image/png");
+}
+
+// ---------- Real sensor mode ----------
+// Readings come from the ESP32 over USB (the Web Serial API, Chrome or Edge only).
+
+const sensorCanvas = $("sensorCanvas");
+let sensorMap = newRoomMap(); // the map of the room, all unknown at first
+let scanner = null;           // where the scanner is (metres), or null if not set yet
+let placing = true;           // true = the next click on the map sets the scanner's position
+let headingDeg = 90;          // the way the scanner points when the servo is at 90 degrees
+let flipped = false;          // true = the servo turns the other way (map came out mirrored)
+let dots = [];                // recent hit points, for the radar dots
+let latest = null;            // the latest reading and its beam
+let readingCount = 0, sweepCount = 0;
+let port = null;              // the USB serial port, while connected
+let drawPending = false;
+const MAX_DOTS = 182;         // about two sweeps of dots
+
+function sensorMessage(text) {
+  $("sensorMessage").textContent = text;
+}
+
+// Metres -> canvas pixels, for the 8 m x 8 m room.
+function roomToPx(x, y) {
+  const s = sensorCanvas.width / ROOM_M;
+  return [x * s, sensorCanvas.height - y * s];
+}
+
+// Redraw at the next animation frame (readings can arrive faster than we need to draw).
+function requestSensorDraw() {
+  if (drawPending) return;
+  drawPending = true;
+  requestAnimationFrame(() => {
+    drawPending = false;
+    drawSensor();
+  });
+}
+
+function drawSensor() {
+  const ctx = sensorCanvas.getContext("2d");
+  const W = sensorCanvas.width, H = sensorCanvas.height;
+  ctx.imageSmoothingEnabled = false;
+
+  // The map: gray = unknown, white = free, black = occupied.
+  const data = sensorMap.data;
+  const img = gridToCanvas((i) => (isFree(data[i]) ? 255 : isOccupied(data[i]) ? 0 : 128),
+    sensorMap.nx, sensorMap.ny);
+  ctx.drawImage(img, 0, 0, W, H);
+
+  if (scanner) {
+    const [sx, sy] = roomToPx(scanner.x, scanner.y);
+    const rangePx = (SENSOR_MAX_M / ROOM_M) * W;
+    // Canvas angles go clockwise because y points down, so we use minus signs.
+    const h = (headingDeg * Math.PI) / 180;
+
+    // The half circle the sensor can see (servo 0 to 180 degrees).
+    ctx.strokeStyle = "rgba(0, 160, 60, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.arc(sx, sy, rangePx, -h - Math.PI / 2, -h + Math.PI / 2);
+    ctx.closePath();
+    ctx.stroke();
+
+    // The radar sweep line, from the scanner to the latest reading.
+    if (latest) {
+      const end = beamEnd(scanner.x, scanner.y, latest.beam);
+      const [ex, ey] = roomToPx(end.x, end.y);
+      ctx.strokeStyle = "rgba(0, 200, 80, 0.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    }
+
+    // The scanner: a blue circle with an arrow showing which way it faces.
+    ctx.fillStyle = "#2f6fde";
+    ctx.beginPath(); ctx.arc(sx, sy, 7, 0, 2 * Math.PI); ctx.fill();
+    ctx.strokeStyle = "#2f6fde";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 25 * Math.cos(h), sy - 25 * Math.sin(h)); ctx.stroke();
+  }
+
+  // The radar dots: newer dots are brighter.
+  dots.forEach((d, k) => {
+    const [px, py] = roomToPx(d.x, d.y);
+    const alpha = 0.25 + 0.75 * ((k + 1) / dots.length);
+    ctx.fillStyle = `rgba(0, 230, 90, ${alpha})`;
+    ctx.beginPath(); ctx.arc(px, py, 3, 0, 2 * Math.PI); ctx.fill();
+  });
+
+  // The text next to the map.
+  $("rAngle").textContent = latest ? `${latest.reading.angleDeg}°` : "-";
+  $("rDistance").textContent = !latest ? "-"
+    : latest.reading.ok ? `${(latest.reading.distanceMm / 1000).toFixed(2)} m` : "no reading";
+  $("rCount").textContent = readingCount;
+  $("rSweeps").textContent = sweepCount;
+  $("headingVal").textContent = headingDeg;
+  $("heading").value = headingDeg;
+  $("scannerPos").textContent = scanner
+    ? `(${scanner.x.toFixed(2)} m, ${scanner.y.toFixed(2)} m)` : "not set";
+}
+
+// Handle one line from the ESP32.
+function handleLine(line) {
+  const msg = parseLine(line);
+  if (!msg) return;
+  if (msg.type === "message") {
+    sensorMessage("ESP32 says: " + msg.text);
+  } else if (msg.type === "sweepEnd") {
+    sweepCount++;
+  } else {
+    readingCount++;
+    const beam = readingToBeam(msg, headingDeg, flipped);
+    latest = { reading: msg, beam };
+    if (!scanner) {
+      sensorMessage("Readings are arriving. Click the map to show where the scanner is.");
+    } else {
+      // Add this one reading to the map with the same updateMap the simulation uses.
+      updateMap(sensorMap, scanner.x, scanner.y, [beam.angleRad], [beam.distanceM], [beam.hit]);
+      if (beam.hit) {
+        dots.push(beamEnd(scanner.x, scanner.y, beam));
+        if (dots.length > MAX_DOTS) dots.shift();
+      }
+    }
+  }
+  requestSensorDraw();
+}
+
+// Keep reading text from the USB port until it is unplugged or closed.
+async function readFromPort() {
+  const decoder = new TextDecoderStream();
+  const piped = port.readable.pipeTo(decoder.writable).catch(() => {});
+  const reader = decoder.readable.getReader();
+  const splitter = new LineSplitter();
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      for (const line of splitter.push(value)) handleLine(line);
+    }
+  } catch (err) {
+    sensorMessage("The sensor stopped sending (was the USB cable unplugged?). Click Connect sensor to try again.");
+  } finally {
+    reader.releaseLock();
+    await piped;
+    try { await port.close(); } catch (err) { /* already closed */ }
+    port = null;
+    $("rConnection").textContent = "Not connected";
+    $("connect").disabled = false;
+  }
+}
+
+$("connect").addEventListener("click", async () => {
+  if (!("serial" in navigator)) return;
+  try {
+    // The browser shows a list of USB devices. Pick the ESP32 (CP2102 / "USB to UART").
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+  } catch (err) {
+    port = null;
+    if (err.name === "NotFoundError") sensorMessage("No device was chosen.");
+    else sensorMessage("Could not open the USB port. Close the Arduino Serial Monitor (only one program can use it) and try again.");
+    return;
+  }
+  $("rConnection").textContent = "Connected";
+  $("connect").disabled = true;
+  sensorMessage(scanner ? "Connected. The ESP32 restarts, waits 5 seconds, then starts sweeping."
+    : "Connected. Now click the map to show where the scanner is.");
+  readFromPort();
 });
+
+// Click the map to set (or move) the scanner's position.
+sensorCanvas.addEventListener("click", (event) => {
+  if (!placing) return;
+  const rect = sensorCanvas.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / rect.width) * ROOM_M;
+  const y = (1 - (event.clientY - rect.top) / rect.height) * ROOM_M;
+  if (x <= 0 || x >= ROOM_M || y <= 0 || y >= ROOM_M) return;
+  scanner = { x, y };
+  placing = false;
+  sensorMessage("Scanner placed. Set which way it faces with the slider.");
+  requestSensorDraw();
+});
+
+$("heading").addEventListener("input", () => {
+  headingDeg = Number($("heading").value);
+  requestSensorDraw();
+});
+
+$("clearMap").addEventListener("click", () => {
+  sensorMap = newRoomMap();
+  dots = [];
+  latest = null;
+  readingCount = 0;
+  sweepCount = 0;
+  sensorMessage("Map cleared.");
+  requestSensorDraw();
+});
+
+$("moveScanner").addEventListener("click", () => {
+  placing = true;
+  sensorMessage("Click the map where the scanner is now.");
+});
+
+$("turn180").addEventListener("click", () => {
+  headingDeg = (headingDeg + 180) % 360;
+  sensorMessage(`Turned 180°. The scanner now faces ${headingDeg}°. Turn the real scanner around too.`);
+  requestSensorDraw();
+});
+
+$("flip").addEventListener("click", () => {
+  flipped = !flipped;
+  sensorMessage(flipped ? "Flipped: the servo now counts the other way. Click Clear map to start again."
+    : "Flipped back to normal. Click Clear map to start again.");
+  requestSensorDraw();
+});
+
+$("downloadMap").addEventListener("click", () => {
+  savePng(mapToRgba(sensorMap, 4), "lidar_room_map.png");
+});
+
+// Switching between Simulation and Real sensor.
+for (const radio of document.querySelectorAll('input[name="mode"]')) {
+  radio.addEventListener("change", () => {
+    const sensorMode = radio.value === "sensor";
+    $("simMode").hidden = sensorMode;
+    $("sensorMode").hidden = !sensorMode;
+    if (sensorMode) {
+      running = false; // pause the simulation while we use the real sensor
+      drawAll();
+      if (!scanner) sensorMessage("Click the map to show where the scanner is, then click Connect sensor.");
+      requestSensorDraw();
+    }
+  });
+}
+
+// No Web Serial (Firefox, Safari, phones): explain, and turn off the Connect button.
+if (!("serial" in navigator)) {
+  $("noSerial").hidden = false;
+  $("connect").disabled = true;
+}
 
 // ---------- Start up ----------
 loadWorld(makeExampleHouse());

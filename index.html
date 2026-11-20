@@ -13,6 +13,13 @@
   </header>
 
   <main>
+    <!-- Choose between the simulated robot and the real sensor -->
+    <nav class="modes">
+      <label><input type="radio" name="mode" value="sim" checked> Simulation</label>
+      <label><input type="radio" name="mode" value="sensor"> Real sensor</label>
+    </nav>
+
+    <div id="simMode">
     <section class="controls">
       <fieldset>
         <legend>Floor plan</legend>
@@ -69,6 +76,47 @@
         <canvas id="chart" width="480" height="240"></canvas>
       </div>
     </section>
+    </div>
+
+    <!-- Real sensor mode: readings from the ESP32 over USB -->
+    <div id="sensorMode" hidden>
+      <p id="noSerial" class="message" hidden>Your browser can't talk to USB devices. Please use Chrome or Edge on a computer (not a phone or tablet).</p>
+      <section class="controls">
+        <fieldset>
+          <legend>Scanner</legend>
+          <label>Scanner faces: <span id="headingVal">90</span>&deg;
+            <input type="range" id="heading" min="0" max="355" step="5" value="90"></label>
+          <p class="tip">The way the sensor points when the servo is at 90&deg;: 0&deg; = right on the map, 90&deg; = up, 180&deg; = left, 270&deg; = down.</p>
+          <p class="small">Scanner position: <span id="scannerPos">not set</span></p>
+        </fieldset>
+        <fieldset>
+          <legend>Latest reading</legend>
+          <table class="stats">
+            <tr><th>Sensor</th><td id="rConnection">Not connected</td></tr>
+            <tr><th>Angle</th><td id="rAngle">-</td></tr>
+            <tr><th>Distance</th><td id="rDistance">-</td></tr>
+            <tr><th>Readings</th><td id="rCount">0</td></tr>
+            <tr><th>Sweeps</th><td id="rSweeps">0</td></tr>
+          </table>
+        </fieldset>
+        <div class="buttons">
+          <button id="connect">Connect sensor</button>
+          <button id="clearMap">Clear map</button>
+          <button id="moveScanner">Move scanner</button>
+          <button id="turn180">Turn 180&deg;</button>
+          <button id="flip">Flip left/right</button>
+          <button id="downloadMap">Download map as PNG</button>
+        </div>
+        <p id="sensorMessage" class="message"></p>
+      </section>
+
+      <section class="views">
+        <div class="view sensorView">
+          <h2>Robot's map (8 m x 8 m room)</h2>
+          <canvas id="sensorCanvas" width="600" height="600"></canvas>
+        </div>
+      </section>
+    </div>
 
     <section class="how">
       <h2>How it works</h2>
