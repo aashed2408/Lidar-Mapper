@@ -53,4 +53,28 @@ Image 800 x 640 px -> grid 200 x 160 cells, 0 cells different
 - PASS: same grid size and cell size
 - PASS: every cell matches
 
+## Test 6: Real sensor: reading the ESP32's lines
+
+- PASS: '90,1234,1' is a valid reading
+- PASS: '178,0,0' is a reading with ok = 0
+- PASS: 'SWEEP_END' ends a sweep
+- PASS: an empty line is ignored
+- PASS: the wiring warning is a message
+- PASS: broken lines are messages, not readings
+- PASS: chunks are joined back into whole lines
+- PASS: 90 degrees points the way the scanner faces
+- PASS: 180 degrees is 90 degrees to the left
+- PASS: flipped: 180 degrees is 90 degrees to the right
+- PASS: turned 180: 90 degrees points down
+- PASS: ok = 0 is a miss out to 4 m
+- PASS: 4 m or more is a miss
+- PASS: the room map is 8 m x 8 m (160 x 160 cells)
+- PASS: 91 readings and 1 sweep end were read
+- PASS: the wall in front (y = 5.5 m) is occupied
+- PASS: the wall on the left (x = 2.5 m) is occupied
+- PASS: the wall on the right (x = 5.5 m) is occupied
+- PASS: the floor in front of the scanner is free
+- PASS: behind the scanner is still unknown
+- PASS: PNG colours: white free, black wall, gray unknown
+
 All checks passed.

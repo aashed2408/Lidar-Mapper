@@ -77,6 +77,14 @@ button:disabled { background: #9aa4b5; cursor: default; }
 .how { margin-top: 20px; background: white; padding: 12px 18px; border-radius: 8px; }
 .how li { margin: 6px 0; }
 
+/* The mode switch at the top */
+.modes { display: flex; gap: 20px; margin-bottom: 12px; font-weight: 600; }
+.modes label { cursor: pointer; }
+
+/* Real sensor mode */
+.sensorView { max-width: 600px; }
+#sensorCanvas { cursor: crosshair; background: #808080; }
+
 @media (max-width: 760px) {
   .views { flex-direction: column; }
 }
